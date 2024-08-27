@@ -3,7 +3,7 @@ use std::{
     net::TcpListener,
 };
 
-use http_server::http::{Request, Response};
+use http_server::{request::Request, response::Response};
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -23,15 +23,23 @@ fn main() {
                 let response = match Request::try_from(buffer.as_slice()) {
                     Err(error) => {
                         eprintln!("Failed to parse bytes because of error: {error}");
-                        Response::internal_server_error()
+                        Response::internal_server_error().build()
                     }
                     Ok(request) if request.target() == "/" => {
                         println!("Received request: {request:?}");
-                        Response::ok()
+                        Response::ok().build()
+                    }
+                    Ok(request) if request.target().starts_with("/echo/") => {
+                        let target_suffix = request
+                            .target()
+                            .strip_prefix("/echo/")
+                            .expect("We've already checked that this string starts with '/echo/'");
+                        println!("Received request: {request:?}");
+                        Response::ok().set_body(target_suffix).build()
                     }
                     Ok(request) => {
                         println!("Received request: {request:?}");
-                        Response::not_found()
+                        Response::not_found().build()
                     }
                 };
                 println!("Generated response: {response}");

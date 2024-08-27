@@ -2,13 +2,21 @@ use std::fmt;
 
 use crate::version::HttpVersion;
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
 pub struct StatusLine {
     http_version: HttpVersion,
     status: Status,
 }
 
 impl StatusLine {
+    pub fn make_http_1_1_status_line(status: Status) -> Self {
+        let http_version = HttpVersion::default();
+        Self {
+            http_version,
+            status,
+        }
+    }
+
     pub fn ok() -> Self {
         let http_version = HttpVersion::default();
         let status = Status::Ok;
@@ -43,8 +51,9 @@ impl fmt::Display for StatusLine {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-enum Status {
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum Status {
+    #[default]
     Ok,
     NotFound,
     InternalServerError,
