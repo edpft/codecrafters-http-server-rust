@@ -3,7 +3,7 @@ use std::{
     net::TcpListener,
 };
 
-use http_server::{request::Request, response::Response};
+use http::{Request, Response};
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.

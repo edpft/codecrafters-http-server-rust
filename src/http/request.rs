@@ -1,4 +1,4 @@
-use crate::{body::Body, error::RequestError, headers::Headers, request_line::RequestLine};
+use crate::{body::Body, error::Error, headers::Headers, request_line::RequestLine};
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct Request {
@@ -26,28 +26,27 @@ impl Request {
 }
 
 impl<'a> TryFrom<&'a [u8]> for Request {
-    type Error = RequestError<'a>;
+    type Error = Error<'a>;
 
     fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        let string_ref: &str =
-            std::str::from_utf8(bytes).map_err(|_| RequestError::Parsing(bytes))?;
+        let string_ref: &str = std::str::from_utf8(bytes).map_err(|_| Error::Parsing(bytes))?;
         Request::try_from(string_ref)
     }
 }
 
 impl<'a> TryFrom<&'a str> for Request {
-    type Error = RequestError<'a>;
+    type Error = Error<'a>;
 
     fn try_from(string: &'a str) -> Result<Self, Self::Error> {
         let Some((request_line_string, remainder)) = string.split_once("\r\n") else {
-            let error = RequestError::NotEnoughRequestParts(0);
+            let error = Error::NotEnoughRequestParts(0);
             return Err(error);
         };
 
         let request_line = RequestLine::try_from(request_line_string)?;
 
         let Some((headers_string, _body_string)) = remainder.split_once("\r\n\r\n") else {
-            let error = RequestError::NotEnoughRequestParts(1);
+            let error = Error::NotEnoughRequestParts(1);
             return Err(error);
         };
 
@@ -61,7 +60,7 @@ impl<'a> TryFrom<&'a str> for Request {
 #[cfg(test)]
 mod tests {
 
-    use crate::{request_line::HttpMethod, version::HttpVersion};
+    use crate::{request_line::HttpMethod, version::Version};
 
     use super::*;
 
@@ -80,7 +79,7 @@ mod tests {
             RequestLine::new(
                 HttpMethod::Get,
                 String::from("/index.html"),
-                HttpVersion::OnePointOne,
+                Version::OnePointOne,
             ),
             expected_headers,
             None,
@@ -99,7 +98,7 @@ mod tests {
             RequestLine::new(
                 HttpMethod::Get,
                 String::from("/echo/abc"),
-                HttpVersion::OnePointOne,
+                Version::OnePointOne,
             ),
             expected_headers,
             None,

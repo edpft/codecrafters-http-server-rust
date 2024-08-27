@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt};
 
-use crate::error::RequestError;
+use crate::error::Error;
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct Headers(HashMap<HeaderName, HeaderValue>);
@@ -50,20 +50,13 @@ impl Headers {
     }
 }
 
+// `HeaderName` implements `Copy` but `HeaderValue` and `Headers` do not
+#[allow(clippy::copy_iterator)]
 impl<'a> Iterator for &'a Headers {
     type Item = (&'a HeaderName, &'a HeaderValue);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.iter().next()
-    }
-}
-
-impl IntoIterator for Headers {
-    type Item = (HeaderName, HeaderValue);
-    type IntoIter = std::collections::hash_map::IntoIter<HeaderName, HeaderValue>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
     }
 }
 
@@ -80,21 +73,21 @@ impl fmt::Display for Headers {
 }
 
 impl<'a> TryFrom<&'a str> for Headers {
-    type Error = RequestError<'a>;
+    type Error = Error<'a>;
 
-    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+    fn try_from(headers_string: &'a str) -> Result<Self, Self::Error> {
         let mut headers: HashMap<HeaderName, HeaderValue> = HashMap::default();
-        for header_name_value_pair in value.split("\r\n") {
-            if header_name_value_pair.is_empty() {
-                break;
-            };
-            let Some(mid) = header_name_value_pair.find(':') else {
-                let error = RequestError::InvalidHeaderNameValuePair(header_name_value_pair);
+        for header_string in headers_string
+            .split("\r\n")
+            .filter(|header_string| !header_string.is_empty())
+        {
+            let Some(mid) = header_string.find(':') else {
+                let error = Error::InvalidHeaderString(header_string);
                 return Err(error);
             };
-            let (key, value) = header_name_value_pair.split_at(mid);
-            let header_name = HeaderName::try_from(key)?;
-            let trimmed_header_value = value
+            let (header_name_string, header_value_string) = header_string.split_at(mid);
+            let header_name = HeaderName::try_from(header_name_string)?;
+            let trimmed_header_value = header_value_string
                 .strip_prefix(':')
                 .expect("value must contained a ':' because we found it above")
                 .trim_start();
@@ -129,7 +122,7 @@ impl fmt::Display for HeaderName {
 }
 
 impl<'a> TryFrom<&'a str> for HeaderName {
-    type Error = RequestError<'a>;
+    type Error = Error<'a>;
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         match value {
             "Host" => Ok(Self::Host),
@@ -137,7 +130,7 @@ impl<'a> TryFrom<&'a str> for HeaderName {
             "Accept" => Ok(Self::Accept),
             "Content-Type" => Ok(Self::ContentType),
             "Content-Length" => Ok(Self::ContentLength),
-            other => Err(RequestError::InvalidHeaderName(other)),
+            other => Err(Error::InvalidHeaderName(other)),
         }
     }
 }

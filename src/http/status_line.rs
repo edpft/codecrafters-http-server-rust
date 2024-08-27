@@ -1,16 +1,16 @@
 use std::fmt;
 
-use crate::version::HttpVersion;
+use crate::version::Version;
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
 pub struct StatusLine {
-    http_version: HttpVersion,
+    http_version: Version,
     status: Status,
 }
 
 impl StatusLine {
     pub fn make_http_1_1_status_line(status: Status) -> Self {
-        let http_version = HttpVersion::default();
+        let http_version = Version::default();
         Self {
             http_version,
             status,
@@ -18,7 +18,7 @@ impl StatusLine {
     }
 
     pub fn ok() -> Self {
-        let http_version = HttpVersion::default();
+        let http_version = Version::default();
         let status = Status::Ok;
         Self {
             http_version,
@@ -27,7 +27,7 @@ impl StatusLine {
     }
 
     pub fn not_found() -> Self {
-        let http_version = HttpVersion::default();
+        let http_version = Version::default();
         let status = Status::NotFound;
         Self {
             http_version,
@@ -36,7 +36,7 @@ impl StatusLine {
     }
 
     pub fn internal_server_error() -> Self {
-        let http_version = HttpVersion::default();
+        let http_version = Version::default();
         let status = Status::InternalServerError;
         Self {
             http_version,
