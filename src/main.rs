@@ -37,6 +37,15 @@ fn main() {
                         println!("Received request: {request:?}");
                         Response::ok().set_body(target_suffix).build()
                     }
+                    Ok(request) if request.target() == "/user-agent" => {
+                        println!("Received request: {request:?}");
+                        let user_agent = request
+                            .headers()
+                            .user_agent()
+                            .expect("Requests to the '/user-agent' endpoint will have a 'User-Agent' header")
+                            .to_string();
+                        Response::ok().set_body(user_agent).build()
+                    }
                     Ok(request) => {
                         println!("Received request: {request:?}");
                         Response::not_found().build()

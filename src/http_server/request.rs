@@ -16,6 +16,10 @@ impl Request {
         }
     }
 
+    pub fn headers(&self) -> &Headers {
+        &self.headers
+    }
+
     pub fn target(&self) -> &str {
         self.request_line.target()
     }

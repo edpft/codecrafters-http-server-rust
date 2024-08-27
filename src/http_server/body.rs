@@ -25,3 +25,9 @@ impl From<&str> for Body {
         Self::new(body)
     }
 }
+
+impl From<String> for Body {
+    fn from(body: String) -> Self {
+        Self::new(body)
+    }
+}

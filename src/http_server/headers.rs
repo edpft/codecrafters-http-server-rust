@@ -41,6 +41,10 @@ impl Headers {
         self
     }
 
+    pub fn user_agent(&self) -> Option<&HeaderValue> {
+        self.0.get(&HeaderName::UserAgent)
+    }
+
     fn insert(&mut self, header_name: HeaderName, header_value: HeaderValue) {
         self.0.insert(header_name, header_value);
     }
