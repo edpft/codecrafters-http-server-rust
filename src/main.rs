@@ -1,12 +1,6 @@
-mod body;
-mod headers;
-mod status_line;
+use std::{io::Write, net::TcpListener};
 
-use std::{fmt, io::Write, net::TcpListener};
-
-use body::Body;
-use headers::Headers;
-use status_line::StatusLine;
+use http_server::http::Response;
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -17,7 +11,7 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let default_response_string = HttpResponse::default().to_string();
+                let default_response_string = Response::default().to_string();
                 match stream.write_all(default_response_string.as_bytes()) {
                     Ok(()) => println!("Wrote bytes"),
                     Err(error) => eprintln!("Failed to write bytes because of error: {error}"),
@@ -27,35 +21,5 @@ fn main() {
                 println!("error: {e}");
             }
         }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct HttpResponse {
-    status_line: StatusLine,
-    headers: Headers,
-    body: Option<Body>,
-}
-
-impl fmt::Display for HttpResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.body {
-            None => write!(f, "{}{}", self.status_line, self.headers),
-            Some(body) => write!(f, "{}{}{}", self.status_line, self.headers, body),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_response() {
-        let default_response = HttpResponse::default();
-        assert_eq!(
-            default_response.to_string(),
-            String::from("HTTP/1.1 200 OK\r\n\r\n")
-        );
     }
 }
