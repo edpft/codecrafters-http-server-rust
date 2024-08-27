@@ -1,6 +1,9 @@
-use std::{io::Write, net::TcpListener};
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+};
 
-use http_server::http::Response;
+use http_server::http::{Request, Response};
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -11,8 +14,30 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let default_response_string = Response::default().to_string();
-                match stream.write_all(default_response_string.as_bytes()) {
+                let mut buffer = [0u8; 1024];
+                match stream.read(buffer.as_mut()) {
+                    Ok(number_of_bytes) => println!("Read {number_of_bytes} bytes"),
+                    Err(error) => eprintln!("Failed to read bytes because of error: {error}"),
+                };
+
+                let response = match Request::try_from(buffer.as_slice()) {
+                    Err(error) => {
+                        eprintln!("Failed to parse bytes because of error: {error}");
+                        Response::internal_server_error()
+                    }
+                    Ok(request) if request.target() == "/" => {
+                        println!("Received request: {request:?}");
+                        Response::ok()
+                    }
+                    Ok(request) => {
+                        println!("Received request: {request:?}");
+                        Response::not_found()
+                    }
+                };
+                println!("Generated response: {response}");
+
+                let response_string = response.to_string();
+                match stream.write_all(response_string.as_bytes()) {
                     Ok(()) => println!("Wrote bytes"),
                     Err(error) => eprintln!("Failed to write bytes because of error: {error}"),
                 };
