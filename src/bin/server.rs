@@ -1,58 +1,64 @@
-use std::{
-    io::{Read, Write},
-    net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
-};
+use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::Context;
-use http::{Request, Response, ThreadPool};
+use http::{Request, Response};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::runtime;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let ipv4_address = Ipv4Addr::LOCALHOST;
     let port: u16 = 4221;
-    let socket_address: SocketAddr = (ipv4_address, port).into();
+    let server_address: SocketAddr = (ipv4_address, port).into();
 
-    let listener = TcpListener::bind(socket_address)
+    let listener = TcpListener::bind(server_address)
+        .await
         .with_context(|| format!("Failed to bind to socket address: {ipv4_address}:{port}"))?;
-    println!("Bound to socket address: {socket_address}");
-    let pool = ThreadPool::new(4);
+    println!("Server bound to address: {server_address}");
 
-    for stream in listener.incoming() {
-        match stream {
-            Err(error) => eprintln!("Connection failed because of error: {error}"),
-            Ok(stream) => {
-                pool.execute(|| {
-                    let _ = handle_connection(stream);
-                });
+    let runtime = runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .build()
+        .context("Attempting to build `tokio` runtime with 4 workers")?;
+
+    loop {
+        let (mut stream, client_address) = listener
+            .accept()
+            .await
+            .context("Failed to accept new connection")?;
+        println!("Accepted connection from client at address: {client_address}");
+
+        runtime.spawn(async move {
+            let mut buffer = [0u8; 1024];
+
+            loop {
+                match stream.read(&mut buffer).await {
+                    Ok(0) => println!("No bytes to read"),
+                    Ok(number_of_bytes) => println!("Read {number_of_bytes} bytes into buffer"),
+                    Err(error) => {
+                        eprintln!("Failed to read bytes because of error: {error}");
+                    }
+                };
+
+                let response = match Request::parse(buffer.as_slice()) {
+                    Err(error) => {
+                        eprintln!("Failed to parse bytes because of error: {error}");
+                        Response::internal_server_error().build()
+                    }
+                    Ok((_, request)) => generate_response(request),
+                };
+
+                let response_string = response.to_string();
+
+                match stream.write(response_string.as_bytes()).await {
+                    Ok(0) => println!("No bytes to write"),
+                    Ok(number_of_bytes) => println!("Wrote {number_of_bytes} bytes"),
+                    Err(error) => eprintln!("Failed to write bytes because of error: {error}"),
+                };
             }
-        }
+        });
     }
-    Ok(())
-}
-
-fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
-    let mut buffer = [0u8; 1024];
-
-    match stream.read(&mut buffer) {
-        Ok(number_of_bytes) => println!("Read {number_of_bytes} bytes into buffer"),
-        Err(error) => return Err(error).context("Failed to read bytes into buffer"),
-    };
-
-    let response = match Request::parse(buffer.as_slice()) {
-        Err(error) => {
-            eprintln!("Failed to parse bytes because of error: {error}");
-            Response::internal_server_error().build()
-        }
-        Ok((_, request)) => generate_response(request),
-    };
-
-    let response_string = response.to_string();
-
-    match stream.write(response_string.as_bytes()) {
-        Ok(number_of_bytes) => println!("Wrote {number_of_bytes} bytes"),
-        Err(error) => return Err(error).context("Failed to write bytes to stream"),
-    };
-
-    Ok(())
 }
 
 fn generate_response(request: Request) -> Response {
