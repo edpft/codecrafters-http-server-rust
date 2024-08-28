@@ -5,7 +5,6 @@ mod method;
 pub mod parsing_utils;
 mod path;
 mod request;
-mod request_line;
 mod response;
 mod response_builder;
 mod status_line;
