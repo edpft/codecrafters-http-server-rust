@@ -9,9 +9,6 @@ use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
-
     let ipv4_address = Ipv4Addr::LOCALHOST;
     let port: u16 = 4221;
     let socket_address: SocketAddr = (ipv4_address, port).into();
