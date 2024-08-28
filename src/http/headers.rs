@@ -4,7 +4,7 @@ use nom::{branch, bytes::complete, combinator, multi, sequence::Tuple, IResult};
 
 use crate::parsing_utils;
 
-#[derive(Clone, Eq, PartialEq, Debug, Default)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Headers(HashMap<HeaderName, HeaderValue>);
 
 impl Headers {
@@ -57,6 +57,20 @@ impl Headers {
 
     fn insert(&mut self, header_name: HeaderName, header_value: HeaderValue) {
         self.0.insert(header_name, header_value);
+    }
+}
+
+impl Default for Headers {
+    fn default() -> Self {
+        let mut headers: HashMap<HeaderName, HeaderValue> = HashMap::default();
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection
+        headers.insert(HeaderName::Connection, HeaderValue::new("keep-alive"));
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Keep-Alive
+        headers.insert(
+            HeaderName::KeepAlive,
+            HeaderValue::new("timeout=5, max=1000"),
+        );
+        Self::new(headers)
     }
 }
 
@@ -118,21 +132,25 @@ impl Header {
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum HeaderName {
-    Host,
-    UserAgent,
     Accept,
-    ContentType,
+    Connection,
     ContentLength,
+    ContentType,
+    Host,
+    KeepAlive,
+    UserAgent,
 }
 
 impl HeaderName {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
         branch::alt((
-            combinator::map(complete::tag(b"Host"), |_| Self::Host),
-            combinator::map(complete::tag(b"User-Agent"), |_| Self::UserAgent),
             combinator::map(complete::tag(b"Accept"), |_| Self::Accept),
-            combinator::map(complete::tag(b"Content-Type"), |_| Self::ContentType),
+            combinator::map(complete::tag(b"Connection"), |_| Self::Connection),
             combinator::map(complete::tag(b"Content-Length"), |_| Self::ContentLength),
+            combinator::map(complete::tag(b"Content-Type"), |_| Self::ContentType),
+            combinator::map(complete::tag(b"Host"), |_| Self::Host),
+            combinator::map(complete::tag(b"Keep-Alive"), |_| Self::KeepAlive),
+            combinator::map(complete::tag(b"User-Agent"), |_| Self::UserAgent),
         ))(bytes)
     }
 }
@@ -140,11 +158,13 @@ impl HeaderName {
 impl fmt::Display for HeaderName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
-            Self::Host => "Host",
-            Self::UserAgent => "User-Agent",
             Self::Accept => "Accept",
-            Self::ContentType => "Content-Type",
+            Self::Connection => "Connection",
             Self::ContentLength => "Content-Length",
+            Self::ContentType => "Content-Type",
+            Self::Host => "Host",
+            Self::KeepAlive => "Keep-Alive",
+            Self::UserAgent => "User-Agent",
         };
         write!(f, "{text}")
     }

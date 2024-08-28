@@ -36,6 +36,11 @@ impl ResponseBuilder {
             Some(status) => StatusLine::make_http_1_1_status_line(status),
         };
 
-        Response::new(status_line, self.headers, self.body)
+        let headers = match self.body {
+            None => self.headers.set_content_length(0),
+            Some(_) => self.headers,
+        };
+
+        Response::new(status_line, headers, self.body)
     }
 }
