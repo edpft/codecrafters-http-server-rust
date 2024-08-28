@@ -16,7 +16,6 @@ fn main() -> anyhow::Result<()> {
     println!("Bound to socket address: {socket_address}");
     let pool = ThreadPool::new(4);
 
-    // ? Should I ignore errors here?
     for stream in listener.incoming() {
         match stream {
             Err(error) => eprintln!("Connection failed because of error: {error}"),
@@ -38,7 +37,15 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         Err(error) => return Err(error).context("Failed to read bytes into buffer"),
     };
 
-    let response_string = generate_response(buffer.as_slice()).to_string();
+    let response = match Request::parse(buffer.as_slice()) {
+        Err(error) => {
+            eprintln!("Failed to parse bytes because of error: {error}");
+            Response::internal_server_error().build()
+        }
+        Ok((_, request)) => generate_response(request),
+    };
+
+    let response_string = response.to_string();
 
     match stream.write(response_string.as_bytes()) {
         Ok(number_of_bytes) => println!("Wrote {number_of_bytes} bytes"),
@@ -48,38 +55,35 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn generate_response(bytes: &[u8]) -> Response {
-    let response = match Request::parse(bytes) {
-        Err(error) => {
-            eprintln!("Failed to parse bytes because of error: {error}");
-            Response::internal_server_error().build()
-        }
-        Ok((_, request)) if request.target() == "/" => {
+fn generate_response(request: Request) -> Response {
+    let response_builder = match request {
+        request if request.target() == "/" => {
             println!("Received request: {request:?}");
-            Response::ok().build()
+            Response::ok()
         }
-        Ok((_, request)) if request.target().starts_with("/echo/") => {
+        request if request.target().starts_with("/echo/") => {
             let target_suffix = request
                 .target()
                 .strip_prefix("/echo/")
                 .expect("We've already checked that this string starts with '/echo/'");
             println!("Received request: {request:?}");
-            Response::ok().set_body(target_suffix.as_str()).build()
+            Response::ok().set_body(target_suffix.as_str())
         }
-        Ok((_, request)) if request.target() == "/user-agent" => {
+        request if request.target() == "/user-agent" => {
             println!("Received request: {request:?}");
             let user_agent = request
                 .headers()
                 .user_agent()
                 .expect("Requests to the '/user-agent' endpoint should have a 'User-Agent' header")
                 .to_string();
-            Response::ok().set_body(user_agent).build()
+            Response::ok().set_body(user_agent)
         }
-        Ok((_, request)) => {
+        request => {
             println!("Received request: {request:?}");
-            Response::not_found().build()
+            Response::not_found()
         }
     };
+    let response = response_builder.build();
     println!("Generated response: {response}");
     response
 }
