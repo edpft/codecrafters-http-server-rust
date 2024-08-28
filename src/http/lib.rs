@@ -8,7 +8,9 @@ mod request;
 mod response;
 mod response_builder;
 mod status_line;
+mod thread_pool;
 mod version;
 
 pub use request::Request;
 pub use response::Response;
+pub use thread_pool::ThreadPool;
