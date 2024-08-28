@@ -1,67 +1,102 @@
 use std::{
-    io::{Read, Write},
-    net::TcpListener,
+    io,
+    net::{Ipv4Addr, SocketAddr},
 };
 
+use anyhow::Context;
 use http::{Request, Response};
+use tokio::net::TcpListener;
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
-    let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
+    let ipv4_address = Ipv4Addr::LOCALHOST;
+    let port: u16 = 4221;
+    let socket_address: SocketAddr = (ipv4_address, port).into();
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let mut buffer = [0u8; 1024];
-                match stream.read(buffer.as_mut()) {
-                    Ok(number_of_bytes) => println!("Read {number_of_bytes} bytes"),
-                    Err(error) => eprintln!("Failed to read bytes because of error: {error}"),
-                };
+    let listener = TcpListener::bind(socket_address)
+        .await
+        .with_context(|| format!("Failed to bind to socket address: {ipv4_address}:{port}"))?;
+    println!("Bound to socket address: {socket_address}");
 
-                let response = match Request::try_from(buffer.as_slice()) {
-                    Err(error) => {
-                        eprintln!("Failed to parse bytes because of error: {error}");
-                        Response::internal_server_error().build()
-                    }
-                    Ok(request) if request.target() == "/" => {
-                        println!("Received request: {request:?}");
-                        Response::ok().build()
-                    }
-                    Ok(request) if request.target().starts_with("/echo/") => {
-                        let target_suffix = request
-                            .target()
-                            .strip_prefix("/echo/")
-                            .expect("We've already checked that this string starts with '/echo/'");
-                        println!("Received request: {request:?}");
-                        Response::ok().set_body(target_suffix).build()
-                    }
-                    Ok(request) if request.target() == "/user-agent" => {
-                        println!("Received request: {request:?}");
-                        let user_agent = request
-                            .headers()
-                            .user_agent()
-                            .expect("Requests to the '/user-agent' endpoint will have a 'User-Agent' header")
-                            .to_string();
-                        Response::ok().set_body(user_agent).build()
-                    }
-                    Ok(request) => {
-                        println!("Received request: {request:?}");
-                        Response::not_found().build()
-                    }
-                };
-                println!("Generated response: {response}");
+    loop {
+        let (stream, client_socket_address) = listener
+            .accept()
+            .await
+            .context("Failed to accept a new incoming connection")?;
+        println!("Accepted incoming connection from: {client_socket_address}");
 
-                let response_string = response.to_string();
-                match stream.write_all(response_string.as_bytes()) {
-                    Ok(()) => println!("Wrote bytes"),
-                    Err(error) => eprintln!("Failed to write bytes because of error: {error}"),
-                };
-            }
-            Err(e) => {
-                println!("error: {e}");
-            }
+        loop {
+            // https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html#method.try_read
+            stream
+                .readable()
+                .await
+                .context("Socket is not readable yet")?;
+
+            let mut buffer = [0u8; 1024];
+
+            match stream.try_read(&mut buffer) {
+                Ok(0) => break,
+                Ok(number_of_bytes) => println!("Read {number_of_bytes} bytes into buffer"),
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(error) => return Err(error).context("Failed to read bytes into buffer"),
+            };
+
+            let response = match Request::try_from(buffer.as_slice()) {
+                Err(error) => {
+                    eprintln!("Failed to parse bytes because of error: {error}");
+                    Response::internal_server_error().build()
+                }
+                Ok(request) if request.target() == "/" => {
+                    println!("Received request: {request:?}");
+                    Response::ok().build()
+                }
+                Ok(request) if request.target().starts_with("/echo/") => {
+                    let target_suffix = request
+                        .target()
+                        .strip_prefix("/echo/")
+                        .expect("We've already checked that this string starts with '/echo/'");
+                    println!("Received request: {request:?}");
+                    Response::ok().set_body(target_suffix).build()
+                }
+                Ok(request) if request.target() == "/user-agent" => {
+                    println!("Received request: {request:?}");
+                    let user_agent = request
+                        .headers()
+                        .user_agent()
+                        .expect(
+                            "Requests to the '/user-agent' endpoint should have a 'User-Agent' header",
+                        )
+                        .to_string();
+                    Response::ok().set_body(user_agent).build()
+                }
+                Ok(request) => {
+                    println!("Received request: {request:?}");
+                    Response::not_found().build()
+                }
+            };
+            println!("Generated response: {response}");
+
+            let response_string = response.to_string();
+
+            // https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html#method.try_write
+            stream
+                .writable()
+                .await
+                .context("Socket is not writeable yet")?;
+
+            match stream.try_write(response_string.as_bytes()) {
+                Ok(0) => break,
+                Ok(number_of_bytes) => println!("Wrote {number_of_bytes} bytes"),
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(error) => return Err(error).context("Failed to write bytes to stream"),
+            };
         }
     }
 }
