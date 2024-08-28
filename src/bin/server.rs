@@ -46,24 +46,24 @@ async fn main() -> anyhow::Result<()> {
                 Err(error) => return Err(error).context("Failed to read bytes into buffer"),
             };
 
-            let response = match Request::try_from(buffer.as_slice()) {
+            let response = match Request::parse(buffer.as_slice()) {
                 Err(error) => {
                     eprintln!("Failed to parse bytes because of error: {error}");
                     Response::internal_server_error().build()
                 }
-                Ok(request) if request.target() == "/" => {
+                Ok((_, request)) if request.target() == "/" => {
                     println!("Received request: {request:?}");
                     Response::ok().build()
                 }
-                Ok(request) if request.target().starts_with("/echo/") => {
+                Ok((_, request)) if request.target().starts_with("/echo/") => {
                     let target_suffix = request
                         .target()
                         .strip_prefix("/echo/")
                         .expect("We've already checked that this string starts with '/echo/'");
                     println!("Received request: {request:?}");
-                    Response::ok().set_body(target_suffix).build()
+                    Response::ok().set_body(target_suffix.as_str()).build()
                 }
-                Ok(request) if request.target() == "/user-agent" => {
+                Ok((_, request)) if request.target() == "/user-agent" => {
                     println!("Received request: {request:?}");
                     let user_agent = request
                         .headers()
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
                         .to_string();
                     Response::ok().set_body(user_agent).build()
                 }
-                Ok(request) => {
+                Ok((_, request)) => {
                     println!("Received request: {request:?}");
                     Response::not_found().build()
                 }

@@ -1,6 +1,8 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, str};
 
-use crate::error::Error;
+use nom::{branch, bytes::complete, combinator, multi, sequence::Tuple, IResult};
+
+use crate::parsing_utils;
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct Headers(HashMap<HeaderName, HeaderValue>);
@@ -8,6 +10,14 @@ pub struct Headers(HashMap<HeaderName, HeaderValue>);
 impl Headers {
     pub fn new(headers: HashMap<HeaderName, HeaderValue>) -> Self {
         Self(headers)
+    }
+
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
+        let header_sequence = multi::many0(Header::parse);
+        let (remainder, (header_sequence, _)) =
+            (header_sequence, parsing_utils::crlf).parse(bytes)?;
+        let headers: Headers = header_sequence.into_iter().collect();
+        Ok((remainder, headers))
     }
 
     pub fn set_accept(mut self, accept: impl Into<HeaderValue>) -> Self {
@@ -50,16 +60,6 @@ impl Headers {
     }
 }
 
-// `HeaderName` implements `Copy` but `HeaderValue` and `Headers` do not
-#[allow(clippy::copy_iterator)]
-impl<'a> Iterator for &'a Headers {
-    type Item = (&'a HeaderName, &'a HeaderValue);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.iter().next()
-    }
-}
-
 impl fmt::Display for Headers {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0
@@ -72,30 +72,47 @@ impl fmt::Display for Headers {
     }
 }
 
-impl<'a> TryFrom<&'a str> for Headers {
-    type Error = Error<'a>;
+impl FromIterator<Header> for Headers {
+    fn from_iter<T: IntoIterator<Item = Header>>(iter: T) -> Self {
+        let mut headers = Self::default();
 
-    fn try_from(headers_string: &'a str) -> Result<Self, Self::Error> {
-        let mut headers: HashMap<HeaderName, HeaderValue> = HashMap::default();
-        for header_string in headers_string
-            .split("\r\n")
-            .filter(|header_string| !header_string.is_empty())
-        {
-            let Some(mid) = header_string.find(':') else {
-                let error = Error::InvalidHeaderString(header_string);
-                return Err(error);
-            };
-            let (header_name_string, header_value_string) = header_string.split_at(mid);
-            let header_name = HeaderName::try_from(header_name_string)?;
-            let trimmed_header_value = header_value_string
-                .strip_prefix(':')
-                .expect("value must contained a ':' because we found it above")
-                .trim_start();
-            let header_value = HeaderValue::new(trimmed_header_value);
+        for Header((header_name, header_value)) in iter {
             headers.insert(header_name, header_value);
         }
-        let headers = Headers::new(headers);
-        Ok(headers)
+
+        headers
+    }
+}
+
+// `HeaderName` implements `Copy` but `HeaderValue` and `Headers` do not
+#[allow(clippy::copy_iterator)]
+impl<'a> Iterator for &'a Headers {
+    type Item = (&'a HeaderName, &'a HeaderValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.iter().next()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct Header(pub (HeaderName, HeaderValue));
+
+impl Header {
+    pub fn new(header_name: HeaderName, header_value: HeaderValue) -> Self {
+        Self((header_name, header_value))
+    }
+
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
+        let (remainder, (header_name, _, _, header_value, _)) = (
+            HeaderName::parse,
+            parsing_utils::colon,
+            parsing_utils::space,
+            HeaderValue::parse,
+            parsing_utils::crlf,
+        )
+            .parse(bytes)?;
+        let header = Header::new(header_name, header_value);
+        Ok((remainder, header))
     }
 }
 
@@ -106,6 +123,18 @@ pub enum HeaderName {
     Accept,
     ContentType,
     ContentLength,
+}
+
+impl HeaderName {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
+        branch::alt((
+            combinator::map(complete::tag(b"Host"), |_| Self::Host),
+            combinator::map(complete::tag(b"User-Agent"), |_| Self::UserAgent),
+            combinator::map(complete::tag(b"Accept"), |_| Self::Accept),
+            combinator::map(complete::tag(b"Content-Type"), |_| Self::ContentType),
+            combinator::map(complete::tag(b"Content-Length"), |_| Self::ContentLength),
+        ))(bytes)
+    }
 }
 
 impl fmt::Display for HeaderName {
@@ -121,20 +150,6 @@ impl fmt::Display for HeaderName {
     }
 }
 
-impl<'a> TryFrom<&'a str> for HeaderName {
-    type Error = Error<'a>;
-    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        match value {
-            "Host" => Ok(Self::Host),
-            "User-Agent" => Ok(Self::UserAgent),
-            "Accept" => Ok(Self::Accept),
-            "Content-Type" => Ok(Self::ContentType),
-            "Content-Length" => Ok(Self::ContentLength),
-            other => Err(Error::InvalidHeaderName(other)),
-        }
-    }
-}
-
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct HeaderValue(String);
 
@@ -142,6 +157,14 @@ impl HeaderValue {
     pub fn new(header_value: impl Into<String>) -> Self {
         let header_value = header_value.into();
         Self(header_value)
+    }
+
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
+        let (remainder, header_value_bytes) = complete::take_until1("\r\n")(bytes)?;
+        let header_value_string =
+            str::from_utf8(header_value_bytes).expect("HeaderValue string is valid UTF8");
+        let header_value = Self::new(header_value_string);
+        Ok((remainder, header_value))
     }
 }
 
@@ -173,7 +196,56 @@ pub enum ContentType {
 
 #[cfg(test)]
 mod tests {
+    use core::str;
+
     use super::*;
+
+    #[test]
+    fn deserialise_empty_headers() {
+        let bytes = b"\r\n";
+        let expected_headers = Headers::default();
+
+        let (remainder, headers) = Headers::parse(bytes).unwrap_or_else(|_| {
+            panic!(
+                "{} is a valid sequence of headers",
+                str::from_utf8(bytes).unwrap()
+            )
+        });
+
+        assert!(remainder.is_empty());
+        assert_eq!(headers, expected_headers);
+    }
+
+    #[test]
+    fn deserialise_host_header() {
+        let bytes = b"Host: localhost:4221\r\n";
+        let expected_header = Header::new(HeaderName::Host, HeaderValue::new("localhost:4221"));
+
+        let (remainder, header) = Header::parse(bytes)
+            .unwrap_or_else(|_| panic!("{} is a valid header", str::from_utf8(bytes).unwrap()));
+
+        assert!(remainder.is_empty());
+        assert_eq!(header, expected_header);
+    }
+
+    #[test]
+    fn deserialise_valid_request_headers() {
+        let bytes = b"Host: localhost:4221\r\nUser-Agent: curl/7.64.1\r\nAccept: */*\r\n\r\n";
+        let expected_headers = Headers::default()
+            .set_host("localhost:4221")
+            .set_user_agent("curl/7.64.1")
+            .set_accept("*/*");
+
+        let (remainder, headers) = Headers::parse(bytes).unwrap_or_else(|_| {
+            panic!(
+                "{} is a valid sequence of headers",
+                str::from_utf8(bytes).unwrap()
+            )
+        });
+
+        assert!(remainder.is_empty());
+        assert_eq!(headers, expected_headers);
+    }
 
     #[test]
     fn serialize_deserialize_valid_request_headers() {
@@ -184,9 +256,10 @@ mod tests {
 
         let serialized_headers = headers.to_string();
 
-        let deserialized_headers =
-            Headers::try_from(serialized_headers.as_str()).expect("Serialized headers are valid");
+        let (remainder, deserialized_headers) =
+            Headers::parse(serialized_headers.as_bytes()).expect("Serialized headers are valid");
 
+        assert!(remainder.is_empty());
         assert_eq!(headers, deserialized_headers);
     }
 
@@ -198,9 +271,10 @@ mod tests {
 
         let serialized_headers = headers.to_string();
 
-        let deserialized_headers =
-            Headers::try_from(serialized_headers.as_str()).expect("Serialized headers are valid");
+        let (remainder, deserialized_headers) =
+            Headers::parse(serialized_headers.as_bytes()).expect("Serialized headers are valid");
 
+        assert!(remainder.is_empty());
         assert_eq!(headers, deserialized_headers);
     }
 }

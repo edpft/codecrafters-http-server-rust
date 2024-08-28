@@ -1,66 +1,82 @@
-use crate::{body::Body, error::Error, headers::Headers, request_line::RequestLine};
+use nom::{sequence::Tuple, IResult};
+
+use crate::{headers::Headers, method::Method, parsing_utils, path::Path, version::Version};
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct Request {
-    request_line: RequestLine,
+    method: Method,
+    target: Path,
+    version: Version,
     headers: Headers,
-    body: Option<Body>,
+    // body: Option<Body>,
 }
 
 impl Request {
-    pub fn new(request_line: RequestLine, headers: Headers, body: Option<Body>) -> Self {
+    pub fn new(method: Method, target: Path, version: Version, headers: Headers) -> Self {
         Self {
-            request_line,
+            method,
+            target,
+            version,
             headers,
-            body,
         }
+    }
+
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
+        let (remainder, (request_line, headers)) =
+            (RequestLine::parse, Headers::parse).parse(bytes)?;
+        let request = Self::new(
+            request_line.method,
+            request_line.target,
+            request_line.version,
+            headers,
+        );
+        Ok((remainder, request))
     }
 
     pub fn headers(&self) -> &Headers {
         &self.headers
     }
 
-    pub fn target(&self) -> &str {
-        self.request_line.target()
+    pub fn target(&self) -> &Path {
+        &self.target
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for Request {
-    type Error = Error<'a>;
-
-    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        let string_ref: &str = std::str::from_utf8(bytes).map_err(|_| Error::Parsing(bytes))?;
-        Request::try_from(string_ref)
-    }
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+struct RequestLine {
+    pub method: Method,
+    pub target: Path,
+    pub version: Version,
 }
 
-impl<'a> TryFrom<&'a str> for Request {
-    type Error = Error<'a>;
-
-    fn try_from(string: &'a str) -> Result<Self, Self::Error> {
-        let Some((request_line_string, remainder)) = string.split_once("\r\n") else {
-            let error = Error::NotEnoughRequestParts(0);
-            return Err(error);
-        };
-
-        let request_line = RequestLine::try_from(request_line_string)?;
-
-        let Some((headers_string, _body_string)) = remainder.split_once("\r\n\r\n") else {
-            let error = Error::NotEnoughRequestParts(1);
-            return Err(error);
-        };
-
-        let headers = Headers::try_from(headers_string)?;
-
-        let request = Self::new(request_line, headers, None);
-        Ok(request)
+impl RequestLine {
+    pub fn new(method: Method, target: Path, version: Version) -> Self {
+        Self {
+            method,
+            target,
+            version,
+        }
+    }
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], RequestLine> {
+        let (remainder, (method, _, target, _, version, _)) = (
+            Method::parse,
+            parsing_utils::space,
+            Path::parse,
+            parsing_utils::space,
+            Version::parse,
+            parsing_utils::crlf,
+        )
+            .parse(bytes)?;
+        let request_line = RequestLine::new(method, target, version);
+        Ok((remainder, request_line))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str;
 
-    use crate::{request_line::HttpMethod, version::Version};
+    use crate::{method::Method, version::Version};
 
     use super::*;
 
@@ -72,40 +88,49 @@ mod tests {
     }
 
     #[test]
-    fn parse_valid_index_request_without_body() {
-        let expected_headers = make_expected_headers();
-
+    fn parse_request_line() {
+        let bytes = b"GET / HTTP/1.1\r\n\r\n";
+        let expected_headers = Headers::default();
         let expected_request = Request::new(
-            RequestLine::new(
-                HttpMethod::Get,
-                String::from("/index.html"),
-                Version::OnePointOne,
-            ),
+            Method::Get,
+            Path::new("/"),
+            Version::OnePointOne,
             expected_headers,
-            None,
+            // None,
         );
 
-        let request = Request::try_from("GET /index.html HTTP/1.1\r\nHost: localhost:4221\r\nUser-Agent: curl/7.64.1\r\nAccept: */*\r\n\r\n").expect("Test string is valid");
+        let (remainder, request) = Request::parse(bytes).unwrap_or_else(|_| {
+            panic!(
+                "Cannot parse bytes:\n{}",
+                str::from_utf8(bytes).expect("Bytes are valid UTF8")
+            )
+        });
 
+        assert!(remainder.is_empty());
         assert_eq!(request, expected_request);
     }
 
     #[test]
-    fn parse_valid_echo_request_without_body() {
-        let expected_headers = make_expected_headers();
+    fn parse_request_line_and_headers() {
+        let bytes = b"GET /index.html HTTP/1.1\r\nHost: localhost:4221\r\nUser-Agent: curl/7.64.1\r\nAccept: */*\r\n\r\n";
 
+        let expected_headers = make_expected_headers();
         let expected_request = Request::new(
-            RequestLine::new(
-                HttpMethod::Get,
-                String::from("/echo/abc"),
-                Version::OnePointOne,
-            ),
+            Method::Get,
+            Path::new("/index.html"),
+            Version::OnePointOne,
             expected_headers,
-            None,
+            // None,
         );
 
-        let request = Request::try_from("GET /echo/abc HTTP/1.1\r\nHost: localhost:4221\r\nUser-Agent: curl/7.64.1\r\nAccept: */*\r\n\r\n").expect("Test string is valid");
+        let (remainder, request) = Request::parse(bytes).unwrap_or_else(|_| {
+            panic!(
+                "Cannot parse bytes:\n{}",
+                str::from_utf8(bytes).expect("Bytes are valid UTF8")
+            )
+        });
 
+        assert!(remainder.is_empty());
         assert_eq!(request, expected_request);
     }
 }
