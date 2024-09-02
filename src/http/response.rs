@@ -27,12 +27,20 @@ impl Response {
         ResponseBuilder::default().set_status(Status::Ok)
     }
 
+    pub fn created() -> ResponseBuilder {
+        ResponseBuilder::default().set_status(Status::Created)
+    }
+
     pub fn not_found() -> ResponseBuilder {
         ResponseBuilder::default().set_status(Status::NotFound)
     }
 
     pub fn internal_server_error() -> ResponseBuilder {
         ResponseBuilder::default().set_status(Status::InternalServerError)
+    }
+
+    pub fn bad_request() -> ResponseBuilder {
+        ResponseBuilder::default().set_status(Status::BadRequest)
     }
 }
 

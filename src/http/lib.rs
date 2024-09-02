@@ -10,5 +10,6 @@ mod response_builder;
 mod status_line;
 mod version;
 
+pub use method::Method;
 pub use request::Request;
 pub use response::Response;

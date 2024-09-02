@@ -57,6 +57,8 @@ pub enum Status {
     Ok,
     NotFound,
     InternalServerError,
+    Created,
+    BadRequest,
 }
 
 impl fmt::Display for Status {
@@ -65,6 +67,8 @@ impl fmt::Display for Status {
             Self::Ok => write!(f, "200 OK"),
             Self::NotFound => write!(f, "404 Not Found"),
             Self::InternalServerError => write!(f, "500 Internal Server Error"),
+            Self::Created => write!(f, "201 Created"),
+            Self::BadRequest => write!(f, "400 Bad Request"),
         }
     }
 }

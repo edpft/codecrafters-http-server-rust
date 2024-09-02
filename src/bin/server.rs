@@ -1,11 +1,11 @@
-use std::io::ErrorKind;
+use std::fs::File;
+use std::io::{ErrorKind, Write};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::{env, fs};
 
 use anyhow::Context;
-use http::{Request, Response};
+use http::{Method, Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::runtime;
@@ -62,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
                         eprintln!("Failed to parse bytes because of error: {error}");
                         Response::internal_server_error().build()
                     }
-                    Ok((_, request)) => generate_response(request, directory),
+                    Ok((_, request)) => generate_response(request, &directory),
                 };
 
                 let response_string = response.to_string();
@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn generate_response(request: Request, directory: String) -> Response {
+fn generate_response(request: Request, directory: &str) -> Response {
     let response_builder = match request {
         request if request.target() == "/" => {
             println!("Received request: {request:?}");
@@ -91,7 +91,7 @@ fn generate_response(request: Request, directory: String) -> Response {
             println!("Received request: {request:?}");
             Response::ok().set_body(target_suffix.as_str())
         }
-        request if request.target().starts_with("/files/") => {
+        request if request.target().starts_with("/files/") && request.method() == Method::Get => {
             let requested_file_name = request
                 .target()
                 .strip_prefix("/files/")
@@ -106,6 +106,32 @@ fn generate_response(request: Request, directory: String) -> Response {
                         requested_file_name.as_str()
                     );
                     eprintln!("Encountered error: {error}");
+                    Response::internal_server_error()
+                }
+            }
+        }
+        request if request.target().starts_with("/files/") && request.method() == Method::Post => {
+            let requested_file_name = request
+                .target()
+                .strip_prefix("/files/")
+                .expect("We've already checked that this string starts with '/files/'");
+            let requested_path = Path::new(&directory).join(requested_file_name.as_str());
+            let body = request
+                .body()
+                .expect("POST requests to /files/ should have a body");
+            match File::create_new(&requested_path) {
+                Ok(mut file) => {
+                    file.write_all(body.as_bytes())
+                        .expect("Writing to a newly created file should succeed");
+                    Response::created()
+                }
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => Response::bad_request(),
+                Err(error) => {
+                    eprintln!(
+                        "Failed to create a new file at: {}",
+                        requested_path.to_string_lossy()
+                    );
+                    eprintln!("Because of error: {error}");
                     Response::internal_server_error()
                 }
             }

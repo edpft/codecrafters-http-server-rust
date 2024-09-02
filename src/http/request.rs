@@ -1,6 +1,13 @@
-use nom::{sequence::Tuple, IResult};
+use nom::{bytes::complete::take, sequence::Tuple, IResult};
 
-use crate::{headers::Headers, method::Method, parsing_utils, path::Path, version::Version};
+use crate::{
+    body::Body,
+    headers::{HeaderName, Headers},
+    method::Method,
+    parsing_utils,
+    path::Path,
+    version::Version,
+};
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct Request {
@@ -8,27 +15,49 @@ pub struct Request {
     target: Path,
     version: Version,
     headers: Headers,
-    // body: Option<Body>,
+    body: Option<Body>,
 }
 
 impl Request {
-    pub fn new(method: Method, target: Path, version: Version, headers: Headers) -> Self {
+    pub fn new(
+        method: Method,
+        target: Path,
+        version: Version,
+        headers: Headers,
+        body: Option<Body>,
+    ) -> Self {
         Self {
             method,
             target,
             version,
             headers,
+            body,
         }
     }
 
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], Self> {
         let (remainder, (request_line, headers)) =
             (RequestLine::parse, Headers::parse).parse(bytes)?;
+
+        let body = match headers.get(&HeaderName::ContentLength) {
+            None => None,
+            Some(header_value) => {
+                let content_length = header_value
+                    .as_usize()
+                    .expect("The value of Content-Length should be an integer");
+                let (_, body) = take(content_length)(remainder)?;
+                let body = body.to_owned();
+                let body = Body::OctetStream(body);
+                Some(body)
+            }
+        };
+
         let request = Self::new(
             request_line.method,
             request_line.target,
             request_line.version,
             headers,
+            body,
         );
         Ok((remainder, request))
     }
@@ -39,6 +68,14 @@ impl Request {
 
     pub fn target(&self) -> &Path {
         &self.target
+    }
+
+    pub fn method(&self) -> Method {
+        self.method
+    }
+
+    pub fn body(&self) -> Option<&Body> {
+        self.body.as_ref()
     }
 }
 
@@ -96,7 +133,7 @@ mod tests {
             Path::new("/"),
             Version::OnePointOne,
             expected_headers,
-            // None,
+            None,
         );
 
         let (remainder, request) = Request::parse(bytes).unwrap_or_else(|_| {
@@ -120,7 +157,7 @@ mod tests {
             Path::new("/index.html"),
             Version::OnePointOne,
             expected_headers,
-            // None,
+            None,
         );
 
         let (remainder, request) = Request::parse(bytes).unwrap_or_else(|_| {

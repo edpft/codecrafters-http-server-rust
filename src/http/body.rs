@@ -13,6 +13,13 @@ impl Body {
             Body::OctetStream(bytes) => bytes.len(),
         }
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::OctetStream(bytes) => bytes,
+            Self::PlainText(string) => string.as_bytes(),
+        }
+    }
 }
 
 impl fmt::Display for Body {

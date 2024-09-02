@@ -20,6 +20,10 @@ impl Headers {
         Ok((remainder, headers))
     }
 
+    pub fn get(&self, header_name: &HeaderName) -> Option<&HeaderValue> {
+        self.0.get(header_name)
+    }
+
     pub fn set_accept(mut self, accept: impl Into<HeaderValue>) -> Self {
         let accept = accept.into();
         self.insert(HeaderName::Accept, accept);
@@ -185,6 +189,11 @@ impl HeaderValue {
             str::from_utf8(header_value_bytes).expect("HeaderValue string is valid UTF8");
         let header_value = Self::new(header_value_string);
         Ok((remainder, header_value))
+    }
+
+    pub fn as_usize(&self) -> Option<usize> {
+        let int: Option<usize> = self.0.parse().ok();
+        int
     }
 }
 
