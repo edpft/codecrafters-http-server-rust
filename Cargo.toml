@@ -10,8 +10,8 @@ name = "http"
 path = "src/http/lib.rs"
 
 [[bin]]
-name = "server"
-src = "src/bin/server.rs"
+name = "codecrafters-http-server"
+path = "src/bin/server.rs"
 
 [dependencies]
 anyhow = "1.0.68" # error handling
