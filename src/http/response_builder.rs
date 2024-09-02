@@ -21,9 +21,13 @@ impl ResponseBuilder {
 
     pub fn set_body(mut self, body: impl Into<Body>) -> Self {
         let body = body.into();
+        let content_type = match &body {
+            Body::OctetStream(_) => ContentType::OctetStream,
+            Body::PlainText(_) => ContentType::Text,
+        };
         let headers = self
             .headers
-            .set_content_type(ContentType::Text)
+            .set_content_type(content_type)
             .set_content_length(body.len());
         self.headers = headers;
         self.body = Some(body);

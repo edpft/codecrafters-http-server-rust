@@ -77,7 +77,7 @@ mod tests {
             Headers::default()
                 .set_content_type(ContentType::Text)
                 .set_content_length(3),
-            Some(Body::new("abc")),
+            Some(Body::from("abc")),
         );
         let response = Response::ok().set_body("abc").build();
         assert_eq!(response, expected_response,);

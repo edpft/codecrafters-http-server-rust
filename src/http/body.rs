@@ -1,33 +1,47 @@
 use std::fmt;
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
-pub struct Body(String);
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub enum Body {
+    PlainText(String),
+    OctetStream(Vec<u8>),
+}
 
 impl Body {
-    pub fn new(body: impl Into<String>) -> Self {
-        let body = body.into();
-        Self(body)
-    }
-
     pub fn len(&self) -> usize {
-        self.0.len()
+        match self {
+            Body::PlainText(string) => string.len(),
+            Body::OctetStream(bytes) => bytes.len(),
+        }
     }
 }
 
 impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        match self {
+            Body::PlainText(string) => write!(f, "{string}"),
+            Body::OctetStream(bytes) => match String::from_utf8(bytes.to_owned()) {
+                Ok(string) => write!(f, "{string}"),
+                Err(_) => write!(f, "{bytes:?}"),
+            },
+        }
     }
 }
 
 impl From<&str> for Body {
     fn from(body: &str) -> Self {
-        Self::new(body)
+        let body = body.to_string();
+        Self::from(body)
     }
 }
 
 impl From<String> for Body {
     fn from(body: String) -> Self {
-        Self::new(body)
+        Self::PlainText(body)
+    }
+}
+
+impl From<Vec<u8>> for Body {
+    fn from(body: Vec<u8>) -> Self {
+        Self::OctetStream(body)
     }
 }

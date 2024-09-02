@@ -64,12 +64,12 @@ impl Default for Headers {
     fn default() -> Self {
         let mut headers: HashMap<HeaderName, HeaderValue> = HashMap::default();
         // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection
-        headers.insert(HeaderName::Connection, HeaderValue::new("keep-alive"));
+        // headers.insert(HeaderName::Connection, HeaderValue::new("keep-alive"));
         // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Keep-Alive
-        headers.insert(
-            HeaderName::KeepAlive,
-            HeaderValue::new("timeout=5, max=1000"),
-        );
+        // headers.insert(
+        //     HeaderName::KeepAlive,
+        //     HeaderValue::new("timeout=5, max=1000"),
+        // );
         Self::new(headers)
     }
 }
@@ -198,6 +198,7 @@ impl From<ContentType> for HeaderValue {
     fn from(content_type: ContentType) -> Self {
         match content_type {
             ContentType::Text => HeaderValue::new("text/plain"),
+            ContentType::OctetStream => HeaderValue::new("application/octet-stream"),
         }
     }
 }
@@ -212,6 +213,7 @@ impl From<&str> for HeaderValue {
 pub enum ContentType {
     #[default]
     Text,
+    OctetStream,
 }
 
 #[cfg(test)]
